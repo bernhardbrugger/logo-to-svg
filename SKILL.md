@@ -27,6 +27,7 @@ Reply in the user's language.
    ```
    - Text lines are matched to the bottom-most horizontal bands of the image, in order. Everything above them is traced as the graphic.
    - Without `--text`, everything is traced. Fine for large lettering; small text (< ~12 px) breaks – the script prints a warning, then re-run with `--text`.
+   - If the traced lines look jagged/stair-stepped (source exported without antialiasing), re-run with `--smooth 1.2` (up to ~1.5; higher rounds off fine details).
    - Options: `--family "Josefin Sans"`, `--font file.ttf` (local font, per line), `--color "#000000"`, `--pad 10`, `--fixed-size`.
 
 4. **Check the preview** by viewing `preview.png` next to the original. Look for: line traced (not a filled box with a hole – the script auto-corrects polarity, but verify), text aligned and same width as original, weight close to original. Adjust weight/family and re-run if needed.

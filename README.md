@@ -6,6 +6,11 @@ A Claude skill that turns a blurry raster logo (PNG/JPG, e.g. exported from Canv
 - **Text:** re-set with a free [Fontsource](https://fontsource.org/) font (default Montserrat), letter spacing fitted to the original, converted to paths.
 - **Output:** one optimized SVG (viewBox only, 2-decimal precision, transparent background) plus an optional PNG preview.
 
+![Before/after: a 500 px logo export zoomed 4× next to the generated SVG](examples/before-after.png)
+
+<sub>Example: [`examples/before.png`](examples/before.png) → [`examples/after.svg`](examples/after.svg), created with<br>
+`python scripts/vectorize.py examples/before.png -o examples/after.svg --text "NORDLICHT STUDIO" --weight 600 --text "DESIGN & PHOTOGRAPHY" --weight 300`</sub>
+
 ## Install as a skill
 Copy this folder into your skills directory (e.g. `~/.claude/skills/logo-to-svg/`) or upload it as a custom skill in Claude. Then just send a logo and ask Claude to vectorize it.
 
@@ -25,6 +30,7 @@ python scripts/vectorize.py logo.png -o logo.svg --preview preview.png \
 | `--family` | Fontsource family, downloaded via npm (default Montserrat). |
 | `--font` | Local font file per line, overrides `--family`. |
 | `--color` | Override the detected color. |
+| `--smooth` | Blur before tracing, in source px (default 0.6). Raise to 1.0–1.5 for jagged, non-antialiased sources. |
 | `--preview` | Render a PNG preview on white. |
 | `--fixed-size` | Keep width/height attributes (default: responsive, viewBox only). |
 

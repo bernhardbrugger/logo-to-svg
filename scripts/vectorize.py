@@ -44,15 +44,20 @@ def load_ink(path):
     border = np.concatenate([g[0], g[-1], g[:, 0], g[:, -1]])
     if np.median(border) < 128:          # dark background -> invert
         g = 255 - g
-    thr, _ = cv2.threshold(g.astype(np.uint8), 0, 255,
-                           cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    ink = g < thr
-    if ink.sum() == 0:
+    bg = float(np.median(np.concatenate([g[0], g[-1], g[:, 0], g[:, -1]])))
+    darkest = float(np.percentile(g, 0.5))
+    if bg - darkest < 20:
         sys.exit("No ink found in image.")
+    # Lenient mask: catches thin/light strokes (small text, JPEG exports).
+    ink = g < bg - 0.3 * (bg - darkest)
+    # drop JPEG speckles (tiny isolated blobs)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), 8)
+    keep = np.zeros(n, bool); keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= 3
+    ink = keep[lab]
     # colour = median of the darkest half of ink pixels
     dark = g < np.percentile(g[ink], 50)
     col = np.median(rgb[ink & dark], axis=0).astype(int)
-    return g, ink, "#%02X%02X%02X" % tuple(col)
+    return g, ink, bg, "#%02X%02X%02X" % tuple(col)
 
 
 def row_bands(ink, min_gap=3):
@@ -64,12 +69,39 @@ def row_bands(ink, min_gap=3):
             bands.append((start, prev)); start = r
         prev = r
     bands.append((start, prev))
-    return bands
+    return [(int(a), int(b)) for a, b in bands]
 
 
-def bbox(ink, y0, y1):
-    ys, xs = np.where(ink[y0:y1 + 1])
-    return xs.min(), xs.max(), ys.min() + y0, ys.max() + y0
+def bbox(g, ink, bg, y0, y1):
+    """Ink bbox of a band, measured at the 50% edge between background and the
+    band's own darkest value (so light/thin text is measured correctly)."""
+    band = g[y0:y1 + 1]
+    m = (band < (bg + band[ink[y0:y1 + 1]].min()) / 2) & ink[y0:y1 + 1]
+    if not m.any():
+        m = ink[y0:y1 + 1]
+    ys, xs = np.where(m)
+    return int(xs.min()), int(xs.max()), int(ys.min() + y0), int(ys.max() + y0)
+
+
+def text_extent(g, ink, bg, y0, y1):
+    """Sub-pixel ink extent of a text band: (left, right, top, bottom) as edge
+    positions in px. Partial edge rows/columns count by their coverage, so a
+    15 px cap height is not over-measured by antialiasing."""
+    band = np.where(ink[y0:y1 + 1], g[y0:y1 + 1], bg)
+    dark = band.min()
+    cov = np.clip((bg - band) / max(bg - dark, 1), 0, 1)
+
+    def edges(profile):
+        idx = np.where(profile > 0.05)[0]
+        a, b = idx[0], idx[-1]
+        return a + (1 - profile[a]), b + profile[b]
+
+    # 0.9 quantile per row/col: robust to single speckles, keeps true stems
+    rows = np.clip(np.sort(cov, axis=1)[:, -2] / np.quantile(cov.max(axis=1), 0.9), 0, 1)
+    cols = np.clip(cov.max(axis=0) / np.quantile(cov.max(axis=0)[cov.max(axis=0) > 0], 0.9), 0, 1)
+    t, b = edges(rows)
+    l, r = edges(cols)
+    return l, r, t + y0, b + y0
 
 
 # ---------------------------------------------------------------- tracing
@@ -77,13 +109,13 @@ def fmt(v):
     return ("%.2f" % v).rstrip("0").rstrip(".")
 
 
-def trace_region(g, x0, y0, x1, y1, scale=12, pad=4):
+def trace_region(g, x0, y0, x1, y1, scale=12, pad=4, smooth=0.6):
     h, w = g.shape
     x0, y0 = max(0, x0 - pad), max(0, y0 - pad)
     x1, y1 = min(w - 1, x1 + pad), min(h - 1, y1 + pad)
     crop = g[y0:y1 + 1, x0:x1 + 1]
     big = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    big = cv2.GaussianBlur(big, (0, 0), scale * 0.6)
+    big = cv2.GaussianBlur(big, (0, 0), scale * smooth)
     thr, _ = cv2.threshold(big.astype(np.uint8), 0, 255,
                            cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
@@ -195,12 +227,15 @@ def main():
                     help="@fontsource family to download (default Montserrat)")
     ap.add_argument("--color", help="override colour, e.g. #000000")
     ap.add_argument("--scale", type=int, default=12, help="trace upscale factor")
+    ap.add_argument("--smooth", type=float, default=0.6,
+                    help="blur before tracing, in source px (raise to 1.0-1.5 for "
+                         "pixelated/jagged sources; too high rounds off details)")
     ap.add_argument("--pad", type=float, default=10, help="viewBox padding (px)")
     ap.add_argument("--fixed-size", action="store_true",
                     help="keep width/height attributes (default: viewBox only)")
     a = ap.parse_args()
 
-    g, ink, color = load_ink(a.input)
+    g, ink, bg, color = load_ink(a.input)
     color = a.color or color
     bands = row_bands(ink)
     nt = len(a.text)
@@ -210,22 +245,22 @@ def main():
 
     paths = []
     gfx = bands[:len(bands) - nt] if nt else bands
-    gx0, gx1, gy0, gy1 = bbox(ink, gfx[0][0], gfx[-1][1])
-    paths.append(trace_region(g, gx0, gy0, gx1, gy1, a.scale))
+    gx0, gx1, gy0, gy1 = bbox(g, ink, bg, gfx[0][0], gfx[-1][1])
+    paths.append(trace_region(g, gx0, gy0, gx1, gy1, a.scale, smooth=a.smooth))
     report = [f"graphic: traced region x{gx0}-{gx1} y{gy0}-{gy1}"]
-    small = [(int(b[0]), int(b[1])) for b in gfx if b[1] - b[0] + 1 < 12]
+    small = [b for b in gfx if b[1] - b[0] + 1 < 12]
     if small:
         report.append(f"WARNING: {len(small)} thin band(s) {small} were traced; if they "
                       f"are text they will look broken. Re-set them with --text.")
 
     for i, line in enumerate(a.text):
         y0, y1 = bands[len(bands) - nt + i]
-        x0, x1, ty0, ty1 = bbox(ink, y0, y1)
+        x0, x1, ty0, ty1 = text_extent(g, ink, bg, y0, y1)
         w = a.weight[i] if i < len(a.weight) else "400"
         font = a.font[i] if i < len(a.font) else (a.font[0] if a.font else
                                                    fetch_fontsource(a.family, w))
-        paths.append(text_path(font, line, x0, x1 + 1, ty1 + 1, cap_px=ty1 - ty0 + 1))
-        report.append(f"text {i+1}: '{line}' {os.path.basename(font)} cap {ty1-ty0+1}px")
+        paths.append(text_path(font, line, x0, x1, ty1, cap_px=ty1 - ty0))
+        report.append(f"text {i+1}: '{line}' {os.path.basename(font)} cap {ty1-ty0:.1f}px")
 
     ys, xs = np.where(ink)
     p = a.pad
