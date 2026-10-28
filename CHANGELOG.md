@@ -6,7 +6,7 @@
 - **New:** lines with lowercase letters are sized from ascender to descender (`--fit auto|caps|bounds`); previously only ALL-CAPS text was supported.
 - **New:** installable package with a `logo-to-svg` command and a Python API (`from logo_to_svg import vectorize`); `scripts/vectorize.py` stays as the entry point for the Claude skill.
 - Font packages are extracted with a path check; output is written as UTF-8; errors are plain messages instead of tracebacks.
-- Tests (27, no network needed) and CI on Linux and Windows.
+- Tests (27, no network needed). A GitHub Actions workflow for Linux and Windows is prepared in `ci/github-actions-ci.yml` (move it to `.github/workflows/` to enable it).
 - SVG output for existing inputs is unchanged byte for byte.
 
 ## 0.1.0
