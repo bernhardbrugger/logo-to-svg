@@ -38,13 +38,24 @@ def load_ink(path):
     keep = np.zeros(n, bool)
     keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= 3
     ink = keep[lab]
-    # colour = median of the darkest half of ink pixels
-    cut = np.percentile(g[ink], 50)
-    dark = g < cut
-    if not (ink & dark).any():   # flat, non-antialiased ink: every pixel equals the median
-        dark = g <= cut
-    col = np.median(rgb[ink & dark], axis=0).astype(int)
-    return g, ink, bg, "#%02X%02X%02X" % tuple(col)
+    return g, ink, bg, ink_colour(rgb, g, ink)
+
+
+def ink_colour(rgb, g, ink):
+    """Hex colour of the ink: the median of its interior pixels.
+
+    Edge pixels are blended with the background and, in sharpened or JPEG exports, often
+    overshoot darker than the real ink, so they are left out by eroding the mask one pixel.
+    Strokes too thin to have an interior fall back to the darkest half of the ink pixels.
+    """
+    core = cv2.erode(ink.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    if core.sum() < 10:
+        cut = np.percentile(g[ink], 50)
+        core = ink & (g < cut)
+        if not core.any():   # flat, non-antialiased ink: every pixel equals the median
+            core = ink & (g <= cut)
+    col = np.median(rgb[core], axis=0).round().astype(int)
+    return "#%02X%02X%02X" % tuple(col)
 
 
 def row_bands(ink, min_gap=3):

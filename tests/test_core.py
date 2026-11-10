@@ -21,6 +21,35 @@ def test_load_ink_finds_colour_and_mask(tmp_path):
     assert ink[90, 200] and not ink[5, 5]
 
 
+def test_load_ink_colour_ignores_dark_edge_overshoot(tmp_path):
+    # A sharpened export: flat ink #1F4037 with a darker one-pixel rim around every shape.
+    # The rim must not pull the detected colour darker (it used to give the rim colour).
+    import cv2
+    from PIL import Image
+    h, w = 300, 400
+    yy, xx = np.mgrid[0:h, 0:w]
+    shape = (xx - 200) ** 2 + (yy - 90) ** 2 <= 50 ** 2
+    shape |= (xx >= 120) & (xx < 280) & (yy >= 190) & (yy < 215)
+    rim = shape & ~cv2.erode(shape.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    img = np.full((h, w, 3), 255, np.uint8)
+    img[shape] = (0x1F, 0x40, 0x37)
+    img[rim] = (0x0A, 0x28, 0x1E)
+    Image.fromarray(img).save(tmp_path / "sharpened.png")
+    _, _, _, colour = load_ink(str(tmp_path / "sharpened.png"))
+    assert colour == "#1F4037"
+
+
+def test_load_ink_colour_of_thin_strokes(tmp_path):
+    # Two-pixel lines have no interior after erosion: the darkest-half fallback applies.
+    from PIL import Image
+    img = np.full((60, 200, 3), 255, np.uint8)
+    img[20:22, 10:190] = (0x80, 0x10, 0x10)
+    img[40:42, 10:190] = (0x80, 0x10, 0x10)
+    Image.fromarray(img).save(tmp_path / "thin.png")
+    _, _, _, colour = load_ink(str(tmp_path / "thin.png"))
+    assert colour == "#801010"
+
+
 def test_load_ink_inverts_dark_backgrounds(tmp_path):
     img = make_logo(tmp_path / "logo.png", inverted=True)
     g, ink, bg, colour = load_ink(img)

@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- **Fix:** the detected colour came out too dark on logos with a darker edge (sharpened or JPEG exports): the README example with ink `#1F4037` gave `#15372E`. The colour is now the median of the ink's interior pixels; strokes too thin to have an interior keep the previous rule.
+
 ## 0.2.0
 - **Fix:** automatic font download failed on Windows (`npm` is `npm.cmd` there and could not be launched). It now resolves npm properly and gives a clear message if Node.js is missing.
 - **Fix:** logos with flat, non-antialiased ink produced an invalid fill colour (`#-8000…`).
