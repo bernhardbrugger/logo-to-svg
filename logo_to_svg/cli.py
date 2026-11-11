@@ -6,7 +6,7 @@ from . import __version__
 from .core import vectorize
 from .util import LogoError
 
-DESCRIPTION = """Turn a blurry single-colour raster logo into a clean SVG.
+DESCRIPTION = """Turn a blurry flat-colour raster logo into a clean SVG.
 
 The graphic is traced with potrace; text lines are re-set with a free font
 and converted to paths, so the SVG looks identical everywhere.
@@ -47,7 +47,7 @@ def build_parser():
                     help="how text is sized: caps = cap height equals band height, bounds = "
                          "ascenders..descenders equal band height, auto = bounds for lines "
                          "with lowercase letters (default)")
-    ap.add_argument("--color", help="override colour, e.g. #000000")
+    ap.add_argument("--color", help="one colour for every part, e.g. #000000")
     ap.add_argument("--scale", type=int, default=12, help="trace upscale factor")
     ap.add_argument("--smooth", type=float, default=0.6,
                     help="blur before tracing, in source px (raise to 1.0-1.5 for "

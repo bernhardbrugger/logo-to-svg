@@ -101,3 +101,70 @@ def test_example_logo_is_traced_deterministically(tmp_path):
     assert a.read_bytes() == b.read_bytes()
     root, paths = svg_paths(a)
     assert paths and 20_000 < a.stat().st_size < 40_000
+
+
+def two_colour_logo(path, subtitle=None):
+    """Teal circle above a dark headline block; optionally a thin, blurred subtitle line
+    (antialiased all the way through, so no pixel reaches its full ink colour)."""
+    import cv2
+    import numpy as np
+    from PIL import Image
+    h, w = 300, 400
+    yy, xx = np.mgrid[0:h, 0:w]
+    img = np.full((h, w, 3), 255, np.float32)
+    img[(xx - 200) ** 2 + (yy - 90) ** 2 <= 50 ** 2] = (0x1F, 0x8A, 0x70)
+    img[190:215, 120:280] = (0x22, 0x22, 0x22)
+    if subtitle:
+        line = np.zeros((h, w), np.float32)
+        line[245:247, 140:260] = 1
+        a = np.clip(cv2.GaussianBlur(line, (0, 0), 0.8) * 1.3, 0, 0.85)[..., None]
+        img = img * (1 - a) + np.array(subtitle, np.float32) * a
+    Image.fromarray(img.round().astype(np.uint8)).save(path)
+    return str(path)
+
+
+def fills(svg_file):
+    return [p.get("fill") for p in ET.parse(svg_file).getroot().iter(NS + "path")]
+
+
+def test_graphic_and_text_keep_their_own_colours(tmp_path, test_font):
+    src = two_colour_logo(tmp_path / "in.png")
+    out = tmp_path / "out.svg"
+    report = vectorize(src, str(out), texts=["AB"], fonts=[test_font], scale=6)
+    assert fills(out) == ["#1F8A70", "#222222"]
+    assert "colours graphic #1F8A70, text 1 #222222" in report[-1]
+
+
+def test_thin_line_takes_the_colour_it_is_a_blend_of(tmp_path, test_font):
+    # Measured directly the subtitle would come out light grey; it is a blend of the headline ink.
+    src = two_colour_logo(tmp_path / "in.png", subtitle=(0x22, 0x22, 0x22))
+    out = tmp_path / "out.svg"
+    vectorize(src, str(out), texts=["AB", "AB"], fonts=[test_font], scale=6)
+    assert fills(out) == ["#1F8A70", "#222222", "#222222"]
+
+
+def test_thin_line_in_a_colour_of_its_own(tmp_path, test_font):
+    src = two_colour_logo(tmp_path / "in.png", subtitle=(0xC0, 0x20, 0x20))
+    out = tmp_path / "out.svg"
+    vectorize(src, str(out), texts=["AB", "AB"], fonts=[test_font], scale=6)
+    graphic, headline, subtitle = fills(out)
+    assert (graphic, headline) == ("#1F8A70", "#222222")
+    r, g, b = (int(subtitle[i:i + 2], 16) for i in (1, 3, 5))
+    assert r > 150 and g < 90 and b < 90          # red, not a grey or the teal
+
+
+def test_single_colour_logo_keeps_one_fill(tmp_path, test_font):
+    src = make_logo(tmp_path / "in.png", ink=40)
+    out = tmp_path / "out.svg"
+    vectorize(src, str(out), texts=["AB"], fonts=[test_font], scale=6)
+    root = ET.parse(out).getroot()
+    assert root.find(NS + "g").get("fill") == "#282828"
+    assert fills(out) == [None, None]
+
+
+def test_color_override_applies_to_every_part(tmp_path, test_font):
+    src = two_colour_logo(tmp_path / "in.png")
+    out = tmp_path / "out.svg"
+    vectorize(src, str(out), texts=["AB"], fonts=[test_font], color="#000000", scale=6)
+    assert ET.parse(out).getroot().find(NS + "g").get("fill") == "#000000"
+    assert fills(out) == [None, None]

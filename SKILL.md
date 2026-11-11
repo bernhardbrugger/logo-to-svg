@@ -5,9 +5,9 @@ description: Turn a blurry raster logo (PNG/JPG, e.g. from Canva or AI tools) in
 
 # Logo to SVG (raster → clean vector)
 
-Turn a low-resolution, single-color logo into an SVG that works for web and print, using only free, open-source tools. The graphic is traced with potrace; text is re-set with a free font and converted to paths, so it renders identically everywhere.
+Turn a low-resolution, flat-color logo into an SVG that works for web and print, using only free, open-source tools. The graphic is traced with potrace; text is re-set with a free font and converted to paths, so it renders identically everywhere.
 
-**Good fit:** line-art logos, flat shapes, one color. **Poor fit:** gradients, photos, multiple colors – say so honestly and suggest a redesign instead.
+**Good fit:** line-art logos, flat shapes, one color, or an icon in one color with text lines in another. **Poor fit:** gradients, photos, a graphic with several colors – say so honestly and suggest a redesign instead.
 
 Reply in the user's language.
 
@@ -38,7 +38,7 @@ Reply in the user's language.
 ## Limits to mention honestly
 - Irregularities in the source image carry over into the trace.
 - The re-set font is a close match, not the original (unless the user supplies it via `--font`).
-- Single color only.
+- One color per part: the graphic and each text line may differ; a multi-colored graphic is traced in one color.
 
 ## Tone
 Short, friendly, encouraging.

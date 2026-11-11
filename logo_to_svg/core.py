@@ -1,4 +1,4 @@
-"""logo-to-svg: turn a blurry single-colour raster logo into a clean SVG.
+"""logo-to-svg: turn a blurry flat-colour raster logo into a clean SVG.
 
 The graphic is traced with potrace; text lines are re-set with a free font and converted to
 paths, so the SVG looks identical everywhere.
@@ -17,6 +17,12 @@ from .util import LogoError, fmt
 # ---------------------------------------------------------------- analysis
 def load_ink(path):
     """Return (gray float image, boolean ink mask, background level, ink colour hex)."""
+    g, ink, bg, colour, _ = _load(path)
+    return g, ink, bg, colour
+
+
+def _load(path):
+    """load_ink plus the RGB image, for per-part colours."""
     im = Image.open(path)
     if im.mode in ("RGBA", "LA", "P"):
         im = im.convert("RGBA")
@@ -38,7 +44,7 @@ def load_ink(path):
     keep = np.zeros(n, bool)
     keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= 3
     ink = keep[lab]
-    return g, ink, bg, ink_colour(rgb, g, ink)
+    return g, ink, bg, ink_colour(rgb, g, ink), rgb
 
 
 def ink_colour(rgb, g, ink):
@@ -56,6 +62,50 @@ def ink_colour(rgb, g, ink):
             core = ink & (g <= cut)
     col = np.median(rgb[core], axis=0).round().astype(int)
     return "#%02X%02X%02X" % tuple(col)
+
+
+def _rgb(hex_colour):
+    return np.array([int(hex_colour[i:i + 2], 16) for i in (1, 3, 5)], np.float32)
+
+
+def solid_colour(rgb, part):
+    """Median colour of a part's solid interior (strokes at least 5 px wide), or None if the
+    part is too thin to have one."""
+    solid = cv2.erode(part.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    return _hex(np.median(rgb[solid], axis=0)) if solid.sum() >= 20 else None
+
+
+def part_colour(rgb, g, part, known, tol=30):
+    """Colour of one part of the logo (the graphic or one text band).
+
+    known - colours measured elsewhere in the logo, most trusted first (the overall ink colour,
+            then the solid parts). A part that matches one of them gets exactly that colour, so a
+            single-colour logo keeps exactly one colour.
+
+    Thin strokes (small or light text) never reach their full ink colour: every pixel is blended
+    with the background, so measuring them directly comes out far too light. A part is therefore
+    measured directly only if it has a solid interior. A thin part takes the first known colour
+    whose blends with the background its pixels are; only if none fits does it get its own
+    colour, from its darkest pixels.
+    """
+    own = solid_colour(rgb, part)
+    if own is not None:
+        near = [c for c in known if np.linalg.norm(_rgb(c) - _rgb(own)) <= tol]
+        return near[0] if near else own
+    border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
+    paper = np.median(border, axis=0)
+    v = rgb[part] - paper
+    for c in known:
+        d = _rgb(c) - paper
+        t = np.clip(v @ d / max(float(d @ d), 1.0), 0, 1.15)  # no darker than the candidate
+        if np.median(np.linalg.norm(v - t[:, None] * d, axis=1)) <= tol / 2:
+            return c
+    darkest = part & (g <= np.percentile(g[part], 10))
+    return _hex(np.median(rgb[darkest], axis=0))
+
+
+def _hex(col):
+    return "#%02X%02X%02X" % tuple(np.clip(np.round(col), 0, 255).astype(int))
 
 
 def row_bands(ink, min_gap=3):
@@ -164,9 +214,10 @@ def vectorize(input_path, output_path, texts=(), weights=(), fonts=(), family="M
     """
     if fit not in ("auto", "caps", "bounds"):
         raise LogoError(f"fit must be auto, caps or bounds, not {fit!r}")
-    g, ink, bg, detected = load_ink(input_path)
-    color = color or detected
+    g, ink, bg, detected, rgb = _load(input_path)
     bands = row_bands(ink)
+
+
     nt = len(texts)
     if nt > len(bands) - 1:
         raise LogoError(f"Found {len(bands)} horizontal band(s) but {nt} --text line(s); "
@@ -174,6 +225,22 @@ def vectorize(input_path, output_path, texts=(), weights=(), fonts=(), family="M
 
     paths = []
     gfx = bands[:len(bands) - nt] if nt else bands
+    # one colour per part (graphic, then each text line), unless --color overrides them all
+    parts = [(gfx[0][0], gfx[-1][1])] + bands[len(bands) - nt:]
+    if color:
+        colours = [color] * len(parts)
+    else:
+        masks = []
+        for y0, y1 in parts:
+            m = np.zeros_like(ink)
+            m[y0:y1 + 1] = ink[y0:y1 + 1]
+            masks.append(m)
+        known = [detected] + [c for c in (solid_colour(rgb, m) for m in masks) if c]
+        colours = []
+        for m in masks:   # a colour found on a thin line is offered to the lines after it
+            colours.append(part_colour(rgb, g, m, known))
+            if colours[-1] not in known:
+                known.append(colours[-1])
     gx0, gx1, gy0, gy1 = bbox(g, ink, bg, gfx[0][0], gfx[-1][1])
     paths.append(trace_region(g, gx0, gy0, gx1, gy1, scale, smooth=smooth))
     report = [f"graphic: traced region x{gx0}-{gx1} y{gy0}-{gy1}"]
@@ -203,12 +270,21 @@ def vectorize(input_path, output_path, texts=(), weights=(), fonts=(), family="M
     vbs = " ".join(fmt(v) for v in vb)
     size = (f' width="{fmt(vb[2] * 3)}" height="{fmt(vb[3] * 3)}"' if fixed_size else "")
     title = os.path.splitext(os.path.basename(output_path))[0]
-    body = "".join(f'<path d="{d}"/>' for d in paths)
+    if len(set(colours)) == 1:
+        body = "".join(f'<path d="{d}"/>' for d in paths)
+        group = f'<g fill="{colours[0]}" fill-rule="evenodd">{body}</g>'
+        used = f"colour {colours[0]}"
+    else:   # e.g. an icon in the brand colour above dark text: one fill per part
+        body = "".join(f'<path fill="{c}" d="{d}"/>' for c, d in zip(colours, paths))
+        group = f'<g fill-rule="evenodd">{body}</g>'
+        used = "colours " + ", ".join(
+            f"{name} {c}" for name, c in
+            zip(["graphic"] + [f"text {i + 1}" for i in range(nt)], colours))
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vbs}"{size}>'
-           f'<title>{title}</title><g fill="{color}" fill-rule="evenodd">{body}</g></svg>')
+           f'<title>{title}</title>{group}</svg>')
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write(svg)
-    report.append(f"wrote {output_path} ({len(svg) / 1024:.1f} KB, colour {color})")
+    report.append(f"wrote {output_path} ({len(svg) / 1024:.1f} KB, {used})")
 
     if preview:
         try:

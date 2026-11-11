@@ -43,7 +43,7 @@ Text lines are matched to the bottom-most horizontal bands of the image, in read
 | `--family` | Fontsource family, downloaded via npm (default Montserrat). |
 | `--font` | Local font file per line, overrides `--family`. |
 | `--fit` | `auto` (default), `caps` or `bounds`. ALL-CAPS lines are sized by cap height; lines with lowercase letters by ascender-to-descender height. |
-| `--color` | Override the detected color. |
+| `--color` | Override the detected color(s) with one color. |
 | `--smooth` | Blur before tracing, in source px (default 0.6). Raise to 1.0–1.5 for jagged, non-antialiased sources. |
 | `--preview` | Render a PNG preview on white. |
 | `--fixed-size` | Keep width/height attributes (default: responsive, viewBox only). |
@@ -60,7 +60,7 @@ vectorize("logo.png", "logo.svg", texts=["DR. JANE DOE"], weights=["600"])
 Copy this folder into your skills directory (e.g. `~/.claude/skills/logo-to-svg/`) or upload it as a custom skill in Claude. Then just send a logo and ask Claude to vectorize it. The skill calls `scripts/vectorize.py`, which runs straight from the folder (install the dependencies listed in [`SKILL.md`](SKILL.md) once).
 
 ## Limits
-Single color · irregularities in the source carry over into the trace · the re-set font is a close match unless you supply the original with `--font` · no gradients or photos.
+One color per part: the graphic and each `--text` line can differ (an icon in the brand color above dark text works), but a multi-colored graphic is traced in one color · thin text in a color of its own may come out a little darker than the original · irregularities in the source carry over into the trace · the re-set font is a close match unless you supply the original with `--font` · no gradients or photos.
 
 ## Development
 
