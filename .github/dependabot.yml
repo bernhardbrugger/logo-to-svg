@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # CI uses only GitHub Actions (checkout, setup-python); keep them current.
+  # Python dependencies are open lower bounds (>=) in pyproject.toml, so pip
+  # updates would only churn without changing what users install.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ['*']
