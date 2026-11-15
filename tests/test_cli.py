@@ -168,3 +168,15 @@ def test_color_override_applies_to_every_part(tmp_path, test_font):
     vectorize(src, str(out), texts=["AB"], fonts=[test_font], color="#000000", scale=6)
     assert ET.parse(out).getroot().find(NS + "g").get("fill") == "#000000"
     assert fills(out) == [None, None]
+
+
+def test_missing_preview_dependency_fails_before_writing(tmp_path, monkeypatch, capsys):
+    # Without cairosvg, --preview used to write the SVG and then exit with an error, so the
+    # caller saw a failure while a fresh SVG sat on disk. Now it stops before doing any work.
+    monkeypatch.setitem(__import__("sys").modules, "cairosvg", None)   # import raises ImportError
+    src = make_logo(tmp_path / "in.png", text_blocks=())
+    out = tmp_path / "out.svg"
+    with pytest.raises(SystemExit) as exc:
+        main([str(src), "-o", str(out), "--preview", str(tmp_path / "p.png"), "--scale", "6"])
+    assert "--preview needs cairosvg" in str(exc.value.code)
+    assert not out.exists()

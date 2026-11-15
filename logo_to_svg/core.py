@@ -214,6 +214,12 @@ def vectorize(input_path, output_path, texts=(), weights=(), fonts=(), family="M
     """
     if fit not in ("auto", "caps", "bounds"):
         raise LogoError(f"fit must be auto, caps or bounds, not {fit!r}")
+    if preview:   # check before any work, so a missing dependency never leaves a half-done run
+        try:
+            import cairosvg
+        except (ImportError, OSError) as e:  # OSError: the native Cairo library is missing
+            raise LogoError(f"--preview needs cairosvg and the Cairo library ({e}). "
+                            f"Install with: pip install cairosvg, or drop --preview") from e
     g, ink, bg, detected, rgb = _load(input_path)
     bands = row_bands(ink)
 
@@ -287,11 +293,6 @@ def vectorize(input_path, output_path, texts=(), weights=(), fonts=(), family="M
     report.append(f"wrote {output_path} ({len(svg) / 1024:.1f} KB, {used})")
 
     if preview:
-        try:
-            import cairosvg
-        except (ImportError, OSError) as e:  # OSError: the native Cairo library is missing
-            raise LogoError(f"--preview needs cairosvg and the Cairo library ({e}). "
-                            f"Install with: pip install cairosvg") from e
         bgrect = (f'<rect x="{fmt(vb[0])}" y="{fmt(vb[1])}" width="{fmt(vb[2])}" '
                   f'height="{fmt(vb[3])}" fill="#fff"/>')
         prev = svg.replace("<g ", bgrect + "<g ", 1)
