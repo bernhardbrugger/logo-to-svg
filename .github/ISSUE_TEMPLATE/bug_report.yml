@@ -1,0 +1,47 @@
+name: Bug report
+description: A logo that comes out wrong, a crash, or an error message
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A logo that reproduces the problem is the most useful thing you can give us.
+        If the logo is not yours to share, a synthetic image with the same problem works just as well.
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran, with all options.
+      placeholder: logo-to-svg logo.png -o logo.svg --text "ACME" --weight 600
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input logo
+      description: Drag the PNG/JPG here, or a cut-down version that still shows the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected and actual result
+      description: What you expected and what you got. Attach the SVG, or a screenshot of it next to the original. For a crash, paste the full error output.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: logo-to-svg version
+      description: Output of `logo-to-svg --version` (or the commit, if you run scripts/vectorize.py from the Claude skill).
+      placeholder: logo-to-svg 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python version and OS
+      placeholder: Python 3.12, Windows 11
+    validations:
+      required: true
